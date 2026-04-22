@@ -10,6 +10,7 @@ Also exports `platform_fan_out` used by graph.py to dispatch Send messages.
 from langgraph.types import Send
 
 from app.core.llm import llm
+from app.core.logger import logger
 from app.state.state import ContentState
 
 
@@ -92,19 +93,23 @@ def _build_feedback_section(state: ContentState, platform: str) -> str:
 # ── Individual platform agent nodes ──────────────────────────────────────────
 
 def linkedin_agent(state: ContentState) -> ContentState:
+    logger.info("[ACT] LinkedIn Agent generating post...")
     prompt = PLATFORM_PROMPTS["linkedin"].format(
         content_plan=state["content_plan"],
         input_content=state["input_content"],
         feedback_section=_build_feedback_section(state, "linkedin"),
     )
     response = llm.invoke(prompt)
+    post = response.content.strip()
+    logger.debug("[ACT] LinkedIn post (%d chars)", len(post))
     new_state = dict(state)
-    new_state["posts"] = {"linkedin": response.content.strip()}
+    new_state["posts"] = {"linkedin": post}
     new_state["history"] = ["[ACT] LinkedIn Agent wrote post."]
     return new_state
 
 
 def x_agent(state: ContentState) -> ContentState:
+    logger.info("[ACT] X (Twitter) Agent generating post...")
     prompt = PLATFORM_PROMPTS["x"].format(
         content_plan=state["content_plan"],
         input_content=state["input_content"],
@@ -114,7 +119,9 @@ def x_agent(state: ContentState) -> ContentState:
     post = response.content.strip()
     # Enforce 280 char limit
     if len(post) > 280:
+        logger.warning("[ACT] X post truncated from %d to 280 chars", len(post))
         post = post[:277] + "..."
+    logger.debug("[ACT] X post (%d chars)", len(post))
     new_state = dict(state)
     new_state["posts"] = {"x": post}
     new_state["history"] = ["[ACT] X Agent wrote post."]
@@ -122,15 +129,18 @@ def x_agent(state: ContentState) -> ContentState:
 
 
 def instagram_agent(state: ContentState) -> ContentState:
+    logger.info("[ACT] Instagram Agent generating caption...")
     prompt = PLATFORM_PROMPTS["instagram"].format(
         content_plan=state["content_plan"],
         input_content=state["input_content"],
         feedback_section=_build_feedback_section(state, "instagram"),
     )
     response = llm.invoke(prompt)
+    post = response.content.strip()
+    logger.debug("[ACT] Instagram caption (%d chars)", len(post))
     new_state = dict(state)
-    new_state["posts"] = {"instagram": response.content.strip()}
-    new_state["history"] = ["[ACT] Instagram Agent wrote post."]
+    new_state["posts"] = {"instagram": post}
+    new_state["history"] = ["[ACT] Instagram Agent wrote caption."]
     return new_state
 
 

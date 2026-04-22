@@ -7,6 +7,7 @@ that decision belongs to routing.py.
 """
 import json
 from app.core.llm import llm
+from app.core.logger import logger
 from app.state.state import ContentState
 
 
@@ -47,6 +48,7 @@ Return ONLY valid JSON:
 
 
 def check_node(state: ContentState) -> ContentState:
+    logger.info("[CHECK] Review Agent scoring posts (iteration %d)...", state["iteration_count"] + 1)
     # Merge all parallel posts into a single view for the reviewer
     posts = state.get("posts", {})
     prompt = CHECK_PROMPT.format(
@@ -83,6 +85,9 @@ def check_node(state: ContentState) -> ContentState:
     }
 
     overall = float(review.get("overall_score", 5.0))
+    logger.info("[CHECK] overall_score=%.1f | platforms scored: %s", overall, list(feedback.keys()))
+    for platform, fb in feedback.items():
+        logger.debug("[CHECK] %s → %s", platform, fb)
 
     new_state = dict(state)
     new_state["feedback"] = feedback

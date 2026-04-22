@@ -6,6 +6,7 @@ PLAN and REPLAN nodes for the Content Manager.
 workflow back through the parallel platform agents.
 """
 from app.core.llm import llm
+from app.core.logger import logger
 from app.state.state import ContentState
 
 
@@ -54,9 +55,11 @@ Write the revised plan in clear bullet-point sections. Be specific and actionabl
 
 
 def plan_node(state: ContentState) -> ContentState:
+    logger.info("[PLAN] Building initial content strategy...")
     prompt = PLAN_PROMPT.format(input_content=state["input_content"])
     response = llm.invoke(prompt)
     content_plan = response.content.strip()
+    logger.debug("[PLAN] Strategy created (%d chars)", len(content_plan))
 
     new_state = dict(state)
     new_state["content_plan"] = content_plan
@@ -71,6 +74,8 @@ def plan_node(state: ContentState) -> ContentState:
 
 
 def replan_node(state: ContentState) -> ContentState:
+    logger.info("[REPLAN] Revising strategy after iteration %d (score=%.1f)...",
+                state["iteration_count"], state.get("overall_score", 0.0))
     prompt = REPLAN_PROMPT.format(
         input_content=state["input_content"],
         content_plan=state.get("content_plan", ""),
@@ -78,6 +83,7 @@ def replan_node(state: ContentState) -> ContentState:
     )
     response = llm.invoke(prompt)
     revised_plan = response.content.strip()
+    logger.debug("[REPLAN] Revised strategy (%d chars)", len(revised_plan))
 
     new_state = dict(state)
     new_state["content_plan"] = revised_plan

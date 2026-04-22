@@ -1,38 +1,47 @@
 import asyncio
 import uvicorn
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
 from dotenv import load_dotenv
 
 load_dotenv()
 
+import json as _json  # noqa: E402
+
 from app.graph.graph import compiled_graph  # noqa: E402 — after load_dotenv
+from app.models.models import ContentRequest, ContentResponse, PlatformContent, MetaInfo  # noqa: E402
+from app.core.logger import logger  # noqa: E402
 
 app = FastAPI(title="Autonomous Social Media Content Studio")
 
 
-def _render_final_output(posts: dict) -> str:
-    sections = [
-        "LinkedIn\n--------\n" + posts.get("linkedin", ""),
-        "Twitter / X\n-----------\n" + posts.get("x", ""),
-        "Instagram\n---------\n" + posts.get("instagram", ""),
-    ]
-    return "\n\n".join(sections)
+def _build_response(final_state: dict) -> ContentResponse:
+    """Parse the JSON final_output from the format node into the typed response."""
+    posts = final_state.get("posts", {})
+    formatted: dict = {}
 
+    raw = final_state.get("final_output", "")
+    if raw:
+        try:
+            formatted = _json.loads(raw)
+        except _json.JSONDecodeError:
+            logger.warning("Could not parse final_output JSON; falling back to raw posts")
 
-# ── Request / Response schemas ────────────────────────────────────────────────
-
-class ContentRequest(BaseModel):
-    input_content: str
-    max_iterations: int = 3
-
-
-class ContentResponse(BaseModel):
-    final_output: str
-    overall_score: float
-    iteration_count: int
-    posts: dict
-    history: list
+    return ContentResponse(
+        linkedin=PlatformContent(
+            content=formatted.get("linkedin", {}).get("content", posts.get("linkedin", ""))
+        ),
+        twitter=PlatformContent(
+            content=formatted.get("twitter", {}).get("content", posts.get("x", ""))
+        ),
+        instagram=PlatformContent(
+            content=formatted.get("instagram", {}).get("content", posts.get("instagram", ""))
+        ),
+        meta=MetaInfo(
+            iterations=final_state["iteration_count"],
+            overall_score=final_state.get("overall_score", 0.0),
+            approved=final_state.get("approval_status", False),
+        ),
+    )
 
 
 # ── Endpoint ──────────────────────────────────────────────────────────────────
@@ -41,6 +50,9 @@ class ContentResponse(BaseModel):
 async def generate_content(request: ContentRequest):
     if not request.input_content.strip():
         raise HTTPException(status_code=400, detail="input_content cannot be empty")
+
+    logger.info("POST /generate | max_iterations=%d | content_length=%d",
+                request.max_iterations, len(request.input_content))
 
     initial_state = {
         "input_content": request.input_content,
@@ -58,15 +70,15 @@ async def generate_content(request: ContentRequest):
     try:
         final_state = await asyncio.to_thread(compiled_graph.invoke, initial_state)
     except Exception as e:
+        logger.error("Graph execution failed: %s", str(e), exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
-    return ContentResponse(
-        final_output=final_state.get("final_output") or _render_final_output(final_state["posts"]),
-        overall_score=final_state.get("overall_score", 0.0),
-        iteration_count=final_state["iteration_count"],
-        posts=final_state["posts"],
-        history=final_state["history"],
-    )
+    logger.info("Workflow complete | iterations=%d | score=%.1f | approved=%s",
+                final_state["iteration_count"],
+                final_state.get("overall_score", 0.0),
+                final_state.get("approval_status", False))
+
+    return _build_response(final_state)
 
 
 if __name__ == "__main__":

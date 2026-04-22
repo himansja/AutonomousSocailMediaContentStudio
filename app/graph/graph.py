@@ -11,7 +11,7 @@ Architecture:
   FAN-IN to Review
     ↓
   [Approved?]
-    ├── Yes → END
+    ├── Yes → Format → END
     └── No  → Replan → FAN-OUT again
 """
 from langgraph.graph import StateGraph, START, END
@@ -20,6 +20,7 @@ from app.state.state import ContentState
 from app.nodes.plan import plan_node, replan_node
 from app.nodes.act import linkedin_agent, x_agent, instagram_agent, platform_fan_out
 from app.nodes.check import check_node
+from app.nodes.format import format_node
 from app.graph.routing import should_continue
 
 
@@ -33,6 +34,7 @@ def build_graph() -> StateGraph:
     graph.add_node("x_agent", x_agent)
     graph.add_node("instagram_agent", instagram_agent)
     graph.add_node("review", check_node)
+    graph.add_node("format", format_node)
 
     # ── Entry point ───────────────────────────────────────────────────────────
     graph.add_edge(START, "plan")
@@ -50,13 +52,16 @@ def build_graph() -> StateGraph:
         "review",
         should_continue,
         {
-        "approve": END,
-        "replan": "replan",
+      "approve": "format",
+      "replan": "replan",
         },
     )
 
     # ── Replan re-fans out to parallel agents ─────────────────────────────────
     graph.add_conditional_edges("replan", platform_fan_out, ["linkedin_agent", "x_agent", "instagram_agent"])
+
+    # ── Format beautifies the approved posts for end-user presentation ───────
+    graph.add_edge("format", END)
 
     return graph.compile()
 
