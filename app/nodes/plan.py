@@ -22,14 +22,30 @@ def _format_search_results(results: list[dict]) -> str:
 
 
 def plan_node(state: ContentState) -> ContentState:
+    input_content = state["input_content"]
+
+    # ── Search 1: background facts about the topic ────────────────────────────
     logger.info("[PLAN] Searching for background research on topic...")
     try:
-        results = web_search.invoke({"query": state["input_content"], "max_results": 5})
-        search_context = _format_search_results(results)
-        logger.debug("[PLAN] Search returned %d results", len(results))
+        topic_results = web_search.invoke({"query": input_content, "max_results": 5})
+        topic_context = _format_search_results(topic_results)
+        logger.debug("[PLAN] Topic search returned %d results", len(topic_results))
     except Exception as e:
-        logger.warning("[PLAN] Web search failed (%s) — proceeding without research", str(e))
-        search_context = "No search results available."
+        logger.warning("[PLAN] Topic search failed (%s)", str(e))
+        topic_context = "No topic research available."
+
+    # ── Search 2: what's trending on social media around this topic ───────────
+    logger.info("[PLAN] Searching for trending social media content on topic...")
+    try:
+        trend_query = f"trending social media content {input_content} 2026"
+        trend_results = web_search.invoke({"query": trend_query, "max_results": 5})
+        trend_context = _format_search_results(trend_results)
+        logger.debug("[PLAN] Trend search returned %d results", len(trend_results))
+    except Exception as e:
+        logger.warning("[PLAN] Trend search failed (%s)", str(e))
+        trend_context = "No trend data available."
+
+    search_context = f"TOPIC RESEARCH:\n{topic_context}\n\nTRENDING CONTENT:\n{trend_context}"
 
     logger.info("[PLAN] Building initial content strategy...")
     prompt = PLAN_PROMPT.format(

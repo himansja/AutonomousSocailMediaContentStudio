@@ -22,7 +22,7 @@ from app.state.state import ContentState
 from app.nodes.plan import plan_node
 from app.nodes.act import linkedin_agent, x_agent, instagram_agent, platform_fan_out
 from app.nodes.check import check_node
-from app.nodes.replan import reflect_node
+from app.nodes.reflect import reflect_node
 from app.nodes.format import format_node
 from app.graph.routing import should_continue
 
