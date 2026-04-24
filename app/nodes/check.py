@@ -9,42 +9,8 @@ import json
 from app.core.llm import llm
 from app.core.logger import logger
 from app.state.state import ContentState
-
-
-CHECK_PROMPT = """You are a senior Content Review Agent.
-
-Content strategy plan that was followed:
-{content_plan}
-
-Posts to review:
-{posts}
-
-Score each platform post (0-10) against:
-- Alignment with the plan
-- Tone and format appropriateness for the platform
-- Clarity and engagement quality
-- Grammar and polish
-
-Return ONLY valid JSON:
-{{
-  "linkedin": {{
-    "score": <int 0-10>,
-    "issues": "<specific issues, or 'None'>",
-    "suggestions": "<concrete improvement suggestions>"
-  }},
-  "x": {{
-    "score": <int 0-10>,
-    "issues": "<specific issues, or 'None'>",
-    "suggestions": "<concrete improvement suggestions>"
-  }},
-  "instagram": {{
-    "score": <int 0-10>,
-    "issues": "<specific issues, or 'None'>",
-    "suggestions": "<concrete improvement suggestions>"
-  }},
-  "overall_score": <float, average of the three scores>
-}}
-"""
+from app.prompts.check_prompts import CHECK_PROMPT
+from app.tools.content_guidelines_checker import content_guidelines_checker
 
 
 def check_node(state: ContentState) -> ContentState:
@@ -85,7 +51,22 @@ def check_node(state: ContentState) -> ContentState:
     }
 
     overall = float(review.get("overall_score", 5.0))
-    logger.info("[CHECK] overall_score=%.1f | platforms scored: %s", overall, list(feedback.keys()))
+
+    # ── Deterministic guidelines check (runs alongside LLM scorer) ───────────
+    guidelines = content_guidelines_checker.invoke({"posts": posts})
+    for platform in ("linkedin", "x", "instagram"):
+        result = guidelines.get(platform, {})
+        if result.get("violations"):
+            violations_str = "; ".join(result["violations"])
+            logger.warning("[CHECK] %s guideline violations: %s", platform, violations_str)
+            # Append violations to feedback so the platform agent can fix them
+            if platform in feedback:
+                feedback[platform] += f" | Guideline violations: {violations_str}"
+        if result.get("warnings"):
+            logger.debug("[CHECK] %s guideline warnings: %s", platform, "; ".join(result["warnings"]))
+
+    logger.info("[CHECK] overall_score=%.1f | guidelines_passed=%s | platforms scored: %s",
+                overall, guidelines.get("overall_passed"), list(feedback.keys()))
     for platform, fb in feedback.items():
         logger.debug("[CHECK] %s → %s", platform, fb)
 

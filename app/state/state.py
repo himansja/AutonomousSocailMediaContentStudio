@@ -15,6 +15,7 @@ class ContentState(TypedDict):
 
     # ── Plan stage ───────────────────────────────────────────────────────────
     content_plan: str          # Strategy/plan produced by the Planner LLM
+    search_results: str        # Raw research context fetched before planning
 
     # ── Act stage ────────────────────────────────────────────────────────────
     posts: Annotated[Dict[str, str], merge_dicts]   # {linkedin, x, instagram}
@@ -25,6 +26,10 @@ class ContentState(TypedDict):
 
     # ── Format stage ─────────────────────────────────────────────────────────
     final_output: str          # clean publish-ready output from Formatter LLM
+
+    # ── Control ──────────────────────────────────────────────────────────────
+    # ── Reflect stage ────────────────────────────────────────────────────────
+    platforms_to_retry: list  # subset of [linkedin, x, instagram] that failed review
 
     # ── Control ──────────────────────────────────────────────────────────────
     history: Annotated[list, append_list]

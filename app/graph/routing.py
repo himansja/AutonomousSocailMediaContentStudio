@@ -33,6 +33,6 @@ def should_continue(state: ContentState) -> str:
                     overall_score, QUALITY_THRESHOLD)
         return "approve"
 
-    logger.info("[ROUTE] Score %.1f below threshold %.1f — replanning (iteration %d/%d)",
+    logger.info("[ROUTE] Score %.1f below threshold %.1f — reflecting (iteration %d/%d)",
                 overall_score, QUALITY_THRESHOLD, iteration_count, max_iterations)
-    return "replan"
+    return "reflect"

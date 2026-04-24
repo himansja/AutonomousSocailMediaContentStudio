@@ -57,6 +57,7 @@ async def generate_content(request: ContentRequest):
     initial_state = {
         "input_content": request.input_content,
         "content_plan": "",
+        "search_results": "",
         "posts": {},
         "feedback": {},
         "overall_score": 0.0,
@@ -65,6 +66,7 @@ async def generate_content(request: ContentRequest):
         "approval_status": False,
         "iteration_count": 0,
         "max_iterations": request.max_iterations,
+        "platforms_to_retry": [],
     }
 
     try:

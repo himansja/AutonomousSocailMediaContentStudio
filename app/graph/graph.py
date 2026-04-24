@@ -1,25 +1,28 @@
 """
 LangGraph workflow: Autonomous Social Media Content Studio
 
-Architecture:
+Architecture (Plan-Act-Check loop):
   START
     ↓
-  Manager Plan
-    ↓
-  FAN-OUT to LinkedIn / Twitter / Instagram agents
-    ↓
-  FAN-IN to Review
+  PLAN   — Manager creates initial content strategy
+    ↓ (fan-out)
+  ACT    — LinkedIn / X / Instagram agents generate posts in parallel
+    ↓ (fan-in)
+  CHECK  — Reviewer scores every platform post
     ↓
   [Approved?]
     ├── Yes → Format → END
-    └── No  → Replan → FAN-OUT again
+    └── No  → REFLECT — identifies only failing platforms, revises plan
+                  ↓ (selective fan-out — failed platforms only)
+              ACT (retry) → CHECK → ...
 """
 from langgraph.graph import StateGraph, START, END
 
 from app.state.state import ContentState
-from app.nodes.plan import plan_node, replan_node
+from app.nodes.plan import plan_node
 from app.nodes.act import linkedin_agent, x_agent, instagram_agent, platform_fan_out
 from app.nodes.check import check_node
+from app.nodes.replan import reflect_node
 from app.nodes.format import format_node
 from app.graph.routing import should_continue
 
@@ -29,7 +32,7 @@ def build_graph() -> StateGraph:
 
     # ── Register nodes ────────────────────────────────────────────────────────
     graph.add_node("plan", plan_node)
-    graph.add_node("replan", replan_node)
+    graph.add_node("reflect", reflect_node)
     graph.add_node("linkedin_agent", linkedin_agent)
     graph.add_node("x_agent", x_agent)
     graph.add_node("instagram_agent", instagram_agent)
@@ -39,7 +42,7 @@ def build_graph() -> StateGraph:
     # ── Entry point ───────────────────────────────────────────────────────────
     graph.add_edge(START, "plan")
 
-    # ── plan fans out to three parallel platform agents ───────────────────────
+    # ── plan fans out to all three parallel platform agents ───────────────────
     graph.add_conditional_edges("plan", platform_fan_out, ["linkedin_agent", "x_agent", "instagram_agent"])
 
     # ── All three agents converge into review (fan-in) ────────────────────────
@@ -52,15 +55,15 @@ def build_graph() -> StateGraph:
         "review",
         should_continue,
         {
-      "approve": "format",
-      "replan": "replan",
+            "approve": "format",
+            "reflect": "reflect",
         },
     )
 
-    # ── Replan re-fans out to parallel agents ─────────────────────────────────
-    graph.add_conditional_edges("replan", platform_fan_out, ["linkedin_agent", "x_agent", "instagram_agent"])
+    # ── reflect selectively re-fans out to only failing platform agents ───────
+    graph.add_conditional_edges("reflect", platform_fan_out, ["linkedin_agent", "x_agent", "instagram_agent"])
 
-    # ── Format beautifies the approved posts for end-user presentation ───────
+    # ── Format beautifies the approved posts for end-user presentation ────────
     graph.add_edge("format", END)
 
     return graph.compile()

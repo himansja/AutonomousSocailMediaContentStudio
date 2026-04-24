@@ -12,73 +12,8 @@ from langgraph.types import Send
 from app.core.llm import llm
 from app.core.logger import logger
 from app.state.state import ContentState
-
-
-# ── Per-platform system prompts ───────────────────────────────────────────────
-
-LINKEDIN_PROMPT = """You are the LinkedIn Content Agent.
-
-Content strategy plan:
-{content_plan}
-
-Original content idea:
-{input_content}
-
-{feedback_section}
-
-Write a LinkedIn post:
-- 150-300 words
-- Professional, thought-leadership tone
-- Structured paragraphs
-- 3-5 relevant hashtags on a new line at the end
-- No emojis in the body; one optional in the opening hook
-
-Return ONLY the post text. No JSON.
-"""
-
-X_PROMPT = """You are the X (Twitter) Content Agent.
-
-Content strategy plan:
-{content_plan}
-
-Original content idea:
-{input_content}
-
-{feedback_section}
-
-Write a single tweet:
-- MAX 280 characters (strictly enforced)
-- Punchy opening hook
-- 1-2 inline hashtags
-- Conversational, engaging tone
-
-Return ONLY the tweet text. No JSON.
-"""
-
-INSTAGRAM_PROMPT = """You are the Instagram Caption Agent.
-
-Content strategy plan:
-{content_plan}
-
-Original content idea:
-{input_content}
-
-{feedback_section}
-
-Write an Instagram caption:
-- 100-150 words of storytelling body
-- Double line break, then 5-10 hashtags grouped at the bottom
-- End the body with a clear Call-To-Action
-- Warm, visual, community-focused tone
-
-Return ONLY the caption text. No JSON.
-"""
-
-PLATFORM_PROMPTS = {
-    "linkedin": LINKEDIN_PROMPT,
-    "x": X_PROMPT,
-    "instagram": INSTAGRAM_PROMPT,
-}
+from app.prompts.act_prompts import PLATFORM_PROMPTS
+from app.tools.character_counter import character_counter
 
 
 # ── Shared helper ─────────────────────────────────────────────────────────────
@@ -102,10 +37,9 @@ def linkedin_agent(state: ContentState) -> ContentState:
     response = llm.invoke(prompt)
     post = response.content.strip()
     logger.debug("[ACT] LinkedIn post (%d chars)", len(post))
-    new_state = dict(state)
-    new_state["posts"] = {"linkedin": post}
-    new_state["history"] = ["[ACT] LinkedIn Agent wrote post."]
-    return new_state
+    # Return ONLY the keys this agent writes — avoids fan-in conflict on
+    # non-annotated keys (input_content, content_plan, etc.)
+    return {"posts": {"linkedin": post}, "history": ["[ACT] LinkedIn Agent wrote post."]}
 
 
 def x_agent(state: ContentState) -> ContentState:
@@ -117,15 +51,14 @@ def x_agent(state: ContentState) -> ContentState:
     )
     response = llm.invoke(prompt)
     post = response.content.strip()
-    # Enforce 280 char limit
-    if len(post) > 280:
-        logger.warning("[ACT] X post truncated from %d to 280 chars", len(post))
-        post = post[:277] + "..."
+    # Use character_counter tool — trims at word boundary, not mid-word
+    result = character_counter.invoke({"text": post})
+    if result["trimmed"]:
+        logger.warning("[ACT] X post trimmed from %d to %d chars",
+                       result["char_count"], result["limit"])
+    post = result["text"]
     logger.debug("[ACT] X post (%d chars)", len(post))
-    new_state = dict(state)
-    new_state["posts"] = {"x": post}
-    new_state["history"] = ["[ACT] X Agent wrote post."]
-    return new_state
+    return {"posts": {"x": post}, "history": ["[ACT] X Agent wrote post."]}
 
 
 def instagram_agent(state: ContentState) -> ContentState:
@@ -138,19 +71,31 @@ def instagram_agent(state: ContentState) -> ContentState:
     response = llm.invoke(prompt)
     post = response.content.strip()
     logger.debug("[ACT] Instagram caption (%d chars)", len(post))
-    new_state = dict(state)
-    new_state["posts"] = {"instagram": post}
-    new_state["history"] = ["[ACT] Instagram Agent wrote caption."]
-    return new_state
+    return {"posts": {"instagram": post}, "history": ["[ACT] Instagram Agent wrote caption."]}
 
 
 # ── Fan-out function (called as conditional edge from plan / reflect) ─────────
 
 def platform_fan_out(state: ContentState) -> list[Send]:
-    """Dispatch all three platform agents in parallel via LangGraph Send API."""
-    return [
-        Send("linkedin_agent", state),
-        Send("x_agent", state),
-        Send("instagram_agent", state),
-    ]
+    """
+    Dispatch platform agents in parallel via LangGraph Send API.
+    - Initial run (platforms_to_retry is empty): dispatch all three.
+    - Retry run: dispatch ONLY platforms that failed review.
+    """
+    platforms_to_retry: list = state.get("platforms_to_retry", [])
+
+    platform_map = {
+        "linkedin":  "linkedin_agent",
+        "x":         "x_agent",
+        "instagram": "instagram_agent",
+    }
+
+    if platforms_to_retry:
+        targets = [platform_map[p] for p in platforms_to_retry if p in platform_map]
+        logger.info("[FAN-OUT] Selective retry for failed platforms: %s", platforms_to_retry)
+    else:
+        targets = list(platform_map.values())
+        logger.info("[FAN-OUT] Initial run — dispatching all three platform agents")
+
+    return [Send(node, state) for node in targets]
 
