@@ -6,22 +6,24 @@ Populates feedback and overall_score. Does NOT set approval_status —
 that decision belongs to routing.py.
 """
 import json
-from app.core.llm import llm
+from app.core.llm import invoke_cached, usage_delta
 from app.core.logger import logger
 from app.state.state import ContentState
-from app.prompts.check_prompts import CHECK_PROMPT
+from app.prompts.check_prompts import CHECK_SYSTEM, CHECK_HUMAN
 from app.tools.content_guidelines_checker import content_guidelines_checker
 
 
 def check_node(state: ContentState) -> ContentState:
     logger.info("[CHECK] Review Agent scoring posts (iteration %d)...", state["iteration_count"] + 1)
-    # Merge all parallel posts into a single view for the reviewer
     posts = state.get("posts", {})
-    prompt = CHECK_PROMPT.format(
-        content_plan=state["content_plan"],
-        posts=json.dumps(posts, indent=2),
+    response = invoke_cached(
+        system_text=CHECK_SYSTEM,
+        human_text=CHECK_HUMAN.format(
+            content_plan=state["content_plan"],
+            posts=json.dumps(posts, indent=2),
+        ),
+        logger=logger,
     )
-    response = llm.invoke(prompt)
     raw = response.content.strip()
 
     if raw.startswith("```"):
@@ -71,7 +73,9 @@ def check_node(state: ContentState) -> ContentState:
         logger.debug("[CHECK] %s → %s", platform, fb)
 
     new_state = dict(state)
+    new_state["token_usage"] = usage_delta(response)
     new_state["feedback"] = feedback
+    new_state["previous_score"] = state.get("overall_score", 0.0)  # save before overwriting
     new_state["overall_score"] = overall
     new_state["iteration_count"] = state["iteration_count"] + 1
     new_state["history"] = [

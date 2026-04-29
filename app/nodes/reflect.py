@@ -11,11 +11,11 @@ In the Plan-Act-Check loop:
 """
 import re
 
-from app.core.llm import llm
+from app.core.llm import invoke_cached, usage_delta
 from app.core.logger import logger
 from app.state.state import ContentState
-from app.graph.routing import QUALITY_THRESHOLD
-from app.prompts.replan_prompts import TARGETED_REPLAN_PROMPT
+from app.graph.routing import QUALITY_THRESHOLD, PLATFORM_FAIL_THRESHOLD
+from app.prompts.replan_prompts import TARGETED_REPLAN_SYSTEM, TARGETED_REPLAN_HUMAN
 
 
 def _parse_score(feedback_str: str) -> float:
@@ -35,8 +35,18 @@ def reflect_node(state: ContentState) -> ContentState:
     failing = {
         platform: fb
         for platform, fb in feedback.items()
-        if _parse_score(fb) < QUALITY_THRESHOLD
+        if _parse_score(fb) < PLATFORM_FAIL_THRESHOLD
     }
+
+    # If no platform is genuinely failing but we still got here, pick the
+    # lowest-scoring one so the loop always makes progress.
+    if not failing and feedback:
+        worst = min(feedback.items(), key=lambda kv: _parse_score(kv[1]))
+        failing = {worst[0]: worst[1]}
+        logger.debug(
+            "[REFLECT] No platform below fail threshold (%.1f); retrying lowest scorer: %s (%.1f)",
+            PLATFORM_FAIL_THRESHOLD, worst[0], _parse_score(worst[1]),
+        )
 
     platforms_to_retry = list(failing.keys())
     logger.info("[REFLECT] Failed platforms: %s (iteration %d)",
@@ -46,16 +56,20 @@ def reflect_node(state: ContentState) -> ContentState:
         f"- {p.upper()}: {fb}" for p, fb in failing.items()
     )
 
-    prompt = TARGETED_REPLAN_PROMPT.format(
-        input_content=state["input_content"],
-        content_plan=state.get("content_plan", ""),
-        failing_feedback=failing_feedback_str,
+    response = invoke_cached(
+        system_text=TARGETED_REPLAN_SYSTEM,
+        human_text=TARGETED_REPLAN_HUMAN.format(
+            input_content=state["input_content"],
+            content_plan=state.get("content_plan", ""),
+            failing_feedback=failing_feedback_str,
+        ),
+        logger=logger,
     )
-    response = llm.invoke(prompt)
     revised_plan = response.content.strip()
     logger.debug("[REFLECT] Revised plan (%d chars)", len(revised_plan))
 
     new_state = dict(state)
+    new_state["token_usage"] = usage_delta(response)
     new_state["content_plan"] = revised_plan
     new_state["platforms_to_retry"] = platforms_to_retry
     new_state["history"] = [

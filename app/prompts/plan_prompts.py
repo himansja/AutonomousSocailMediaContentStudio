@@ -1,14 +1,11 @@
-PLAN_PROMPT = """You are the Content Manager for a social media agency.
+# ── PLAN ─────────────────────────────────────────────────────────────────────
+# Static system message — eligible for Azure OpenAI prompt caching
+PLAN_SYSTEM = """You are the Content Manager for a social media agency.
 
-You have been given a content idea, current research, and trending social media context.
-Analyse all three and produce a detailed content PLAN that will guide platform-specific writers.
+You will be given a content idea, optionally a primary source document (blog post or article),
+current research, and trending social media context.
+Analyse all inputs and produce a detailed content PLAN that will guide platform-specific writers.
 Do NOT write the posts yet.
-
-Content idea:
-{input_content}
-
-Background research (facts, news, context about the topic):
-{search_context}
 
 Your plan must cover:
 1. Target audience (who will read this)
@@ -21,22 +18,21 @@ Your plan must cover:
 8. Key facts / phrases that must appear in all posts
 9. What to AVOID (off-brand language, over-promotion, etc.)
 
-Write the plan in clear bullet-point sections. Be specific and actionable.
-"""
+Write the plan in clear bullet-point sections. Be specific and actionable."""
 
-REPLAN_PROMPT = """You are the Content Manager for a social media agency.
+# Dynamic human message — contains per-request variables
+PLAN_HUMAN = """Content idea:
+{input_content}
+
+{source_content_section}Background research (facts, news, context about the topic):
+{search_context}"""
+
+
+# ── REPLAN ────────────────────────────────────────────────────────────────────
+REPLAN_SYSTEM = """You are the Content Manager for a social media agency.
 
 The current social media strategy needs revision after review feedback.
 Update the plan so the platform agents can produce stronger outputs.
-
-Original content idea:
-{input_content}
-
-Current plan:
-{content_plan}
-
-Reviewer feedback:
-{feedback}
 
 Produce a REVISED content plan that:
 1. Fixes the weaknesses identified by the reviewer
@@ -44,5 +40,18 @@ Produce a REVISED content plan that:
 3. Gives clearer, more actionable platform-specific guidance
 4. Highlights what each platform agent must change next
 
-Write the revised plan in clear bullet-point sections. Be specific and actionable.
-"""
+Write the revised plan in clear bullet-point sections. Be specific and actionable."""
+
+REPLAN_HUMAN = """Original content idea:
+{input_content}
+
+Current plan:
+{content_plan}
+
+Reviewer feedback:
+{feedback}"""
+
+
+# ── Legacy aliases (kept for backward compatibility) ─────────────────────────
+PLAN_PROMPT = PLAN_SYSTEM + "\n\n" + PLAN_HUMAN
+REPLAN_PROMPT = REPLAN_SYSTEM + "\n\n" + REPLAN_HUMAN

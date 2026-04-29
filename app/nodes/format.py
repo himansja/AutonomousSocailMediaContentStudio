@@ -7,26 +7,27 @@ It handles final polish: consistent hashtag ordering, emoji placement,
 line-break formatting, and a summary cover note.
 """
 import json
-from app.core.llm import llm
+from app.core.llm import invoke_cached, usage_delta
 from app.core.logger import logger
 from app.state.state import ContentState
-from app.prompts.format_prompts import FORMAT_PROMPT
+from app.prompts.format_prompts import FORMAT_SYSTEM, FORMAT_HUMAN
 
 
 def format_node(state: ContentState) -> ContentState:
     logger.info("[FORMAT] Formatting approved posts into publish-ready output...")
-    # Summarise the plan to first 500 chars to keep the prompt tight
     plan_summary = state["content_plan"][:500] + (
         "..." if len(state["content_plan"]) > 500 else ""
     )
-
-    prompt = FORMAT_PROMPT.format(
-        posts=json.dumps(state["posts"], indent=2),
-        content_plan_summary=plan_summary,
-        overall_score=round(state.get("overall_score", 0.0), 1),
-        iteration_count=state["iteration_count"],
+    response = invoke_cached(
+        system_text=FORMAT_SYSTEM,
+        human_text=FORMAT_HUMAN.format(
+            posts=json.dumps(state["posts"], indent=2),
+            content_plan_summary=plan_summary,
+            overall_score=round(state.get("overall_score", 0.0), 1),
+            iteration_count=state["iteration_count"],
+        ),
+        logger=logger,
     )
-    response = llm.invoke(prompt)
     raw = response.content.strip()
 
     if raw.startswith("```"):
@@ -49,6 +50,7 @@ def format_node(state: ContentState) -> ContentState:
 
     logger.info("[FORMAT] Final output ready (%d chars)", len(final_output))
     new_state = dict(state)
+    new_state["token_usage"] = usage_delta(response)
     new_state["final_output"] = final_output
     new_state["approval_status"] = True
     new_state["history"] = ["[FORMAT] Final publish-ready package produced."]

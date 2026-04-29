@@ -9,10 +9,10 @@ Also exports `platform_fan_out` used by graph.py to dispatch Send messages.
 """
 from langgraph.types import Send
 
-from app.core.llm import llm
+from app.core.llm import invoke_cached, usage_delta
 from app.core.logger import logger
 from app.state.state import ContentState
-from app.prompts.act_prompts import PLATFORM_PROMPTS
+from app.prompts.act_prompts import PLATFORM_SYSTEMS, PLATFORM_HUMAN
 from app.tools.character_counter import character_counter
 
 
@@ -29,49 +29,55 @@ def _build_feedback_section(state: ContentState, platform: str) -> str:
 
 def linkedin_agent(state: ContentState) -> ContentState:
     logger.info("[ACT] LinkedIn Agent generating post...")
-    prompt = PLATFORM_PROMPTS["linkedin"].format(
-        content_plan=state["content_plan"],
-        input_content=state["input_content"],
-        feedback_section=_build_feedback_section(state, "linkedin"),
+    response = invoke_cached(
+        system_text=PLATFORM_SYSTEMS["linkedin"],
+        human_text=PLATFORM_HUMAN.format(
+            content_plan=state["content_plan"],
+            input_content=state["input_content"],
+            feedback_section=_build_feedback_section(state, "linkedin"),
+        ),
+        logger=logger,
     )
-    response = llm.invoke(prompt)
-    post = response.content.strip()
+    post = str(response.content).strip()
     logger.debug("[ACT] LinkedIn post (%d chars)", len(post))
-    # Return ONLY the keys this agent writes — avoids fan-in conflict on
-    # non-annotated keys (input_content, content_plan, etc.)
-    return {"posts": {"linkedin": post}, "history": ["[ACT] LinkedIn Agent wrote post."]}
+    return {"posts": {"linkedin": post}, "token_usage": usage_delta(response), "history": ["[ACT] LinkedIn Agent wrote post."]}  # type: ignore[return-value]
 
 
 def x_agent(state: ContentState) -> ContentState:
     logger.info("[ACT] X (Twitter) Agent generating post...")
-    prompt = PLATFORM_PROMPTS["x"].format(
-        content_plan=state["content_plan"],
-        input_content=state["input_content"],
-        feedback_section=_build_feedback_section(state, "x"),
+    response = invoke_cached(
+        system_text=PLATFORM_SYSTEMS["x"],
+        human_text=PLATFORM_HUMAN.format(
+            content_plan=state["content_plan"],
+            input_content=state["input_content"],
+            feedback_section=_build_feedback_section(state, "x"),
+        ),
+        logger=logger,
     )
-    response = llm.invoke(prompt)
-    post = response.content.strip()
-    # Use character_counter tool — trims at word boundary, not mid-word
+    post = str(response.content).strip()
     result = character_counter.invoke({"text": post})
     if result["trimmed"]:
         logger.warning("[ACT] X post trimmed from %d to %d chars",
                        result["char_count"], result["limit"])
     post = result["text"]
     logger.debug("[ACT] X post (%d chars)", len(post))
-    return {"posts": {"x": post}, "history": ["[ACT] X Agent wrote post."]}
+    return {"posts": {"x": post}, "token_usage": usage_delta(response), "history": ["[ACT] X Agent wrote post."]}  # type: ignore[return-value]
 
 
 def instagram_agent(state: ContentState) -> ContentState:
     logger.info("[ACT] Instagram Agent generating caption...")
-    prompt = PLATFORM_PROMPTS["instagram"].format(
-        content_plan=state["content_plan"],
-        input_content=state["input_content"],
-        feedback_section=_build_feedback_section(state, "instagram"),
+    response = invoke_cached(
+        system_text=PLATFORM_SYSTEMS["instagram"],
+        human_text=PLATFORM_HUMAN.format(
+            content_plan=state["content_plan"],
+            input_content=state["input_content"],
+            feedback_section=_build_feedback_section(state, "instagram"),
+        ),
+        logger=logger,
     )
-    response = llm.invoke(prompt)
-    post = response.content.strip()
+    post = str(response.content).strip()
     logger.debug("[ACT] Instagram caption (%d chars)", len(post))
-    return {"posts": {"instagram": post}, "history": ["[ACT] Instagram Agent wrote caption."]}
+    return {"posts": {"instagram": post}, "token_usage": usage_delta(response), "history": ["[ACT] Instagram Agent wrote caption."]}  # type: ignore[return-value]
 
 
 # ── Fan-out function (called as conditional edge from plan / reflect) ─────────
