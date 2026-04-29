@@ -22,7 +22,7 @@ from app.state.state import ContentState
 from app.nodes.plan import plan_node
 from app.nodes.act import linkedin_agent, x_agent, instagram_agent, platform_fan_out
 from app.nodes.check import check_node
-from app.nodes.reflect import reflect_node
+from app.nodes.replan import replan_node
 from app.nodes.format import format_node
 from app.graph.routing import should_continue
 
@@ -32,7 +32,7 @@ def build_graph() -> StateGraph:
 
     # ── Register nodes ────────────────────────────────────────────────────────
     graph.add_node("plan", plan_node)
-    graph.add_node("reflect", reflect_node)
+    graph.add_node("reflect", replan_node)
     graph.add_node("linkedin_agent", linkedin_agent)
     graph.add_node("x_agent", x_agent)
     graph.add_node("instagram_agent", instagram_agent)

@@ -8,7 +8,7 @@ workflow back through the parallel platform agents.
 from app.core.llm import invoke_cached, usage_delta
 from app.core.logger import logger
 from app.state.state import ContentState
-from app.prompts.plan_prompts import PLAN_SYSTEM, PLAN_HUMAN, REPLAN_SYSTEM, REPLAN_HUMAN
+from app.prompts.plan_prompts import PLAN_SYSTEM, PLAN_HUMAN
 from app.tools.web_search import web_search
 from app.tools.read_file_tool import read_uploaded_file
 from app.tools.read_url_tool import read_url
@@ -132,29 +132,4 @@ def plan_node(state: ContentState) -> ContentState:
     new_state["approval_status"] = False
     new_state["platforms_to_retry"] = []
     new_state["history"] = [history_note]
-    return new_state
-
-
-def replan_node(state: ContentState) -> ContentState:
-    logger.info("[REPLAN] Revising strategy after iteration %d (score=%.1f)...",
-                state["iteration_count"], state.get("overall_score", 0.0))
-    response = invoke_cached(
-        system_text=REPLAN_SYSTEM,
-        human_text=REPLAN_HUMAN.format(
-            input_content=state["input_content"],
-            content_plan=state.get("content_plan", ""),
-            feedback=state.get("feedback", {}),
-        ),
-        logger=logger,
-    )
-    revised_plan = str(response.content).strip()
-    logger.debug("[REPLAN] Revised strategy (%d chars)", len(revised_plan))
-
-    new_state = dict(state)
-    new_state["token_usage"] = usage_delta(response)
-    new_state["content_plan"] = revised_plan
-    new_state["final_output"] = ""
-    new_state["history"] = [
-        f"[REPLAN] Strategy revised after review iteration {state['iteration_count']}."
-    ]
     return new_state

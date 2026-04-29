@@ -28,30 +28,5 @@ PLAN_HUMAN = """Content idea:
 {search_context}"""
 
 
-# ── REPLAN ────────────────────────────────────────────────────────────────────
-REPLAN_SYSTEM = """You are the Content Manager for a social media agency.
-
-The current social media strategy needs revision after review feedback.
-Update the plan so the platform agents can produce stronger outputs.
-
-Produce a REVISED content plan that:
-1. Fixes the weaknesses identified by the reviewer
-2. Preserves the original core message
-3. Gives clearer, more actionable platform-specific guidance
-4. Highlights what each platform agent must change next
-
-Write the revised plan in clear bullet-point sections. Be specific and actionable."""
-
-REPLAN_HUMAN = """Original content idea:
-{input_content}
-
-Current plan:
-{content_plan}
-
-Reviewer feedback:
-{feedback}"""
-
-
-# ── Legacy aliases (kept for backward compatibility) ─────────────────────────
+# ── Legacy alias ─────────────────────────────────────────────────────────────
 PLAN_PROMPT = PLAN_SYSTEM + "\n\n" + PLAN_HUMAN
-REPLAN_PROMPT = REPLAN_SYSTEM + "\n\n" + REPLAN_HUMAN
